@@ -1,0 +1,400 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <script src = "lib/math2D.js"></script>
+    <script src = "lib/canvasobject.js"></script>
+    <script src = "lib/field.js"></script>
+    <style>
+        body {
+            background-color: black;
+        }
+        canvas {
+            border: 1px solid white;
+            .position: absolute;
+            .left: 30px;
+            .top: 10px;
+            background-color: black;
+        }
+        div {
+            position:absolute;
+            top: 420px;
+            left: 30px;
+        }
+    </style>
+  </head>
+  <body>
+    <button onclick="toggleGravity1()">Toggle floor gravity</button>
+    <br / >
+    <canvas id="game" width="600" height="400" style=></canvas>
+    <canvas id="arrows" width="400" height="400" style=></canvas>
+  </body>
+  
+  <script id=drawing_functions>
+    function line(ctx, p0, p1) {
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y);
+      ctx.lineTo(p1.x, p1.y);
+      ctx.stroke();
+      ctx.closePath();
+    }
+    function rect(ctx, p0, p1) {
+      ctx.beginPath();
+      ctx.rect(p0.x, p0.y, p1.x-p0.x, p1.y-p0.y);
+      ctx.fill();
+      ctx.stroke();
+      ctx.closePath();
+    }
+    function circle(ctx, center, radius) {
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, radius, 0, 2*Math.PI, false);
+      //ctx.fill();
+      ctx.stroke();
+      ctx.closePath();
+    }
+    function bezier(ctx, p0, p1, c0, c1, show_controls) { 
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y);
+      ctx.bezierCurveTo(c0.x, c0.y, c1.x, c1.y, p1.x, p1.y);
+      ctx.stroke();
+      ctx.closePath();
+      if (show_controls) {
+        marker(ctx, c0.x, c0.y);
+        marker(ctx, c1.x, c1.y);
+      }
+    }
+
+    function marker(ctx, pos, color) {
+      if (color) { ctx.strokeStyle = color; }
+        circle(ctx, pos, 1);
+    }
+    
+    function randomColor() {
+        rgb = Math.floor(Math.random() * Math.pow(256, 3)).toString(16);
+        return '#' + rgb
+    }
+  </script>
+  
+  <script id=utility>
+    MOUSE_DOWN = "mouse down";
+    MOUSE_UP = "mouse up";
+    MOUSE_DRAG = "mouse drag";
+    function logf() {
+        stack = []
+        func = arguments.callee.caller
+        stackstring = func.name
+        indent = ""
+        while (func && stack.length<10) {
+            stack.push(func)
+            func = stack[stack.length-1].arguments.callee.caller
+            if (func) {
+                stackstring = func.name + " > " + stackstring
+                indent += "    "
+            }
+        }
+        console.log("[-logf-]", stackstring, stack[0].arguments);
+    }
+    function loadImage(ctx, src, pos) {
+        var img = new Image();
+        if (pos) img.onload = function() { ctx.drawImage(img, pos.x, pos.y); }
+        img.src = src;
+        return img
+    }
+    function iter(array, callback) {
+        if (!callback || !array || !array.length) return;
+        for (var i=0; i < array.length; i++) {
+            callback(array[i]);
+        }
+    }
+    function isArray(a) {
+      return Object.prototype.toString.apply(a) === '[object Array]';
+    }
+    function hw() {
+        console.log("Hello world");
+    }
+    function clear(ctx) {
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    }
+    function text(txt, pos, pos_loc) {
+        if (!isArray(txt)) txt = [txt];
+        
+        if (pos == "center")
+            pos = xy(c.width/2 - ctx.measureText(txt).width/2, c.height/2 + font.size/2);
+        else if (!pos_loc || pos_loc.toLowerCase()=="nw")
+            pos.add(xy(0, font.size));
+        else if (pos_loc.toLowerCase()=="ne")
+            pos.add(xy(-ctx.measureText(txt).width, font.size));
+        else if (pos_loc.toLowerCase()=="se")
+            pos.add(xy(ctx.measureText(txt).width, 0));
+            
+        for (var i=0; i < txt.length; i++) {
+            if (typeof(txt[i]) != "string") continue;
+            ctx.fillText(txt[i], pos.x, pos.y);
+            pos.add(xy(0, font.size));
+        }
+    }
+    function boxcoords(size) {
+        var r = size/2;
+        return [xy(-r, -r), xy(r, -r), xy(r, r), xy(-r, r)];
+    }
+    
+    grid = {color: "gray", x:20, y:20, X:5, Y:5};
+    function drawGrid() {
+        if (!grid.dash) grid.dash = 1;
+        if (!grid.color) grid.color = "gray";
+        
+        ctx.strokeStyle = grid.color;
+        ctx.lineWidth = 1;
+        
+        var W = ctx.canvas.width;
+        var H = ctx.canvas.height;
+        
+        var dx = xy(grid.x, 0);
+        var dy = xy(0, grid.y);
+        
+        // Horizontal grid lines
+        var p0 = xy(0, 0.5);
+        var p1 = xy(W, 0.5);
+        var i = 0;
+        while (p0.y <= H) {
+            // Minor grid lines
+            if (grid.X && i % grid.X != 0) {
+                p1.x = grid.dash;
+                while(p1.x <= W) {
+                    line(ctx, p0, p1);
+                    p0.add({x:grid.dash*2, y:0});
+                    p1.add({x:grid.dash*2, y:0});
+                }
+                p0.x = 0;
+                p1.x = W;
+            }
+            // Major grid lines
+            else {
+                line(ctx, p0, p1);
+            }
+            p0.add({x:0, y:grid.y});
+            p1.add({x:0, y:grid.y});
+            i++;
+        }
+        // Vertical grid lines
+        p0 = xy(0.5, 0);
+        p1 = xy(0.5, H);
+        i = 0;
+        while (p0.x <= W) {
+            // Minor grid lines
+            if (grid.Y && i % grid.Y != 0) {
+                p1.y = grid.dash;
+                while(p1.y <= H) {
+                    line(ctx, p0, p1);
+                    p0.add({x:0, y:grid.dash*2});
+                    p1.add({x:0, y:grid.dash*2});
+                }
+                p0.y = 0;
+                p1.y = H;
+            }
+            // Major grid lines
+            else {
+                line(ctx, p0, p1);
+            }
+            p0.add({x:grid.x, y:0});
+            p1.add({x:grid.x, y:0});
+            i++;
+        }
+        
+    }
+  </script>
+  
+  <script id=game_vars>
+    var c = document.getElementById("game");
+    var c2 = document.getElementById("arrows");
+    var ctx = c.getContext("2d");
+    var ctx2 = c2.getContext("2d");
+    var frame = 0;
+    var mouse = {pos:xy(0, 0), delta:xy(0, 0), velocity:xy(0, 0), motion:"still", new_pos:false, state:MOUSE_UP};
+    var font = {size: 20, type: 'Arial'}
+    
+    var game = {
+        title: "GAME TITLE",
+        fps: 60,
+        objects: [],
+        bg_color: 'black',
+        size: xy(600,400)
+        
+    }
+    
+    c.style.backgroundColor = game.bg_color;
+    c2.style.backgroundColor = 'white';
+  </script>
+  
+  <script id=button_callbacks>
+    game.gravity_on = false;
+    function toggleGravity1() {
+        if (!game.gravity_on) iter(game.objects, function(s) { s.obey('gravity1', gravity1);})
+        else iter(game.objects, function(s) { s.ignore('gravity1');})
+        game.gravity_on = !game.gravity_on;
+    }
+    
+  </script>
+  
+  <script id=game_resources>
+    var images = {
+        //splash: loadImage(ctx, "images/splash.png")
+    }
+  </script>
+  
+  <script id=game_objs>
+    gravity1 = field_constant(xy(0, 0.2))
+    //gravity1.bound({ymax: 399});
+    
+    //gravity2 = field_inverse_square(xy(200, 200), 
+    
+    sides = reflecting_boundary({xmin:0, ymin:0, xmax:game.size.x, ymax:game.size.y});
+    
+    mouse_repel = field('acceleration', function(obj) {
+        dist = subtract(mouse.pos, obj.pos);
+        return rth(-50/(dist.r*dist.r), mod(dist.th, Math.PI*2));
+  });
+    
+    ///////////////////
+    
+    function makeSquare() {
+        s = CanvasObject(ctx, randXY(game.size), boxcoords(5));
+        s.graphics.color = randomColor();
+        actuate(s);
+        s.velocity = rth(2, Math.random()*Math.PI*2);
+        s.obey('sides', sides);
+        s.tickActions.push(function() {
+            if (this.pos.y > game.size.y) this.pos._set_xy(this.pos.x, game.size.y);
+        });
+        game.objects.push(s);
+    }
+    
+    
+    n = 10
+    for (var i=0; i < n; i++) makeSquare();
+    
+    
+  </script>
+  
+  <script id=game_stages>
+    function titleScreen() {
+        clear();
+        ctx.drawImage(images.splash, 0, 0);
+        text(game.title, xy(100, 100));
+    }
+    function menu() {
+        clear();
+        text("Menu:", xy(130, 130));
+        text(["Easy", "Normal", "Hard"], xy(220, 130));
+    }
+  </script>
+  
+  <script id=events>
+    var t0 = new Date().getTime();
+    function time() { return new Date().getTime() - t0; }
+    
+    c.addEventListener("mousemove", function(event) {
+        pos = calcMouseCanvasPos(event);
+        mouse.velocity = add(pos, neg(mouse.pos));
+        mouse.pos = pos;
+        mouse.new_pos = true;
+        mouse.motion = "moving";
+        
+        if (mouse.state == MOUSE_DOWN) { mouse.state = MOUSE_DRAG; }
+            
+        if (mouse.state == MOUSE_DRAG) {
+            if (c.clicked_object) c.clicked_object.ondrag(mouse.velocity);
+        }
+        
+    });
+    c.addEventListener("mousedown", function(event) {
+        mouse.state = MOUSE_DOWN;
+        iter(game.objects, function(obj) { 
+            if (obj.contains(mouse.pos)) c.clicked_object = obj;
+        });
+        if (c.clicked_object) c.clicked_object.onmousedown();
+    });
+    c.addEventListener("mouseup", function(event) {
+        //console.log("\t" + time() + "\tmouseup\t" + mouse.motion + "\t" + mouse.velocity);
+        // CanvasObject onclick event
+        if (mouse.state == MOUSE_DOWN && c.clicked_object) c.clicked_object.onclick(mouse.pos);
+        
+        // CanvasObject onmouseup event
+        if (c.clicked_object) c.clicked_object.onmouseup();
+        
+        mouse.state = MOUSE_UP;
+        c.clicked_object = null;
+    });
+    c.addEventListener("click", function(event) {
+        console.log("Clicked at " + mouse.pos);
+    })
+    function calcMouseCanvasPos(event) {
+        if (navigator.userAgent.match(/Firefox/i)) {
+            return xy(event.layerX, event.layerY);
+		}
+		else if (navigator.userAgent.match(/Chrome/i)) {
+            return xy(event.layerX, event.layerY);
+		}
+		else if (navigator.userAgent.match(/MSIE/i)) {
+            return xy(event.x - c.offsetLeft, event.y - c.offsetTop);
+		}
+		else {
+			// This is the same as the Chrome code
+            return xy(event.layerX, event.layerY);
+		}
+    }
+    
+  </script>
+  
+  <script id=main>
+    function update_mouse() {
+        if (!mouse.new_pos) {
+            if (mouse.motion == "moving") mouse.motion = "stopped";
+            else {
+                mouse.motion = "still";
+                mouse.velocity = xy(0, 0);
+            }
+        }
+        mouse.new_pos = false;
+    }
+    function next() {
+        update_mouse();
+        
+        ctx.clearRect(-400, -400, ctx.canvas.width, ctx.canvas.height);
+        ctx2.fillStyle = 'black';
+        ctx2.fillRect(-100, -100, 200, 200);
+        
+        ctx.globalAlpha = 0.1;
+        ctx.fillStyle = game.bg_color;
+        ctx.fillRect(0, 0, 600, 400);
+        ctx.globalAlpha = 1;
+        
+        iter(game.objects, function(obj) {
+            obj.tick(); obj.draw();
+            normalize(obj.velocity, 20).arrowOn(ctx2, vzero, obj.graphics.color);
+        });
+        tick();
+    }
+    function tick() {
+        frame++;
+        setTimeout(next, 1000/game.fps);
+    }
+    function setup_arrows() {
+        ctx2.lineWidth = 0.5;
+        ctx2.translate(game.size.y/2, game.size.y/2);
+        ctx2.scale(6, 6);
+    }
+    function show_arrows(vectors) {
+        for (v in vectors) {
+            vectors[v].arrowOn(ctx2);
+        }
+    }
+    window.onload = function() {
+        setup_arrows();
+        ctx.font = font.size.toString() + "px " + font.type;
+        //titleScreen();
+        //menu();
+        
+        tick();
+    }
+  </script>
+</html>
